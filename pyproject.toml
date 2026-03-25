@@ -5,6 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "duckduckgo-search>=8.1.1",
     "ollama>=0.6.1",
+    "requests>=2.32.5",
     "rich>=14.3.3",
 ]
