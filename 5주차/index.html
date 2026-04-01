@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Todo List</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .todo-app {
+            background: white;
+            width: 100%;
+            max-width: 450px;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        #search-input,
+        #todo-input,
+        #due-date-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e1e5ee;
+            border-radius: 12px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        #due-date-input {
+            flex: 0 0 auto;
+            color: #555;
+            cursor: pointer;
+        }
+
+        #search-input:focus,
+        #todo-input:focus,
+        #due-date-input:focus {
+            border-color: #6c5ce7;
+        }
+
+        #add-btn {
+            padding: 12px 24px;
+            background: #6c5ce7;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s ease, transform 0.1s ease;
+        }
+
+        #add-btn:hover {
+            background: #5b4bc4;
+        }
+
+        #add-btn:active {
+            transform: scale(0.95);
+        }
+
+        #todo-list {
+            list-style: none;
+        }
+
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .todo-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            transform: translateY(-2px);
+            background: #ffffff;
+            border: 1px solid #f1f2f6;
+        }
+
+        .todo-item.completed .todo-text {
+            text-decoration: line-through;
+            color: #a0a5b1;
+        }
+
+        .todo-item.warning {
+            background: #fff9c4;
+            border: 1px solid #ffeb3b;
+        }
+
+        .todo-item.overdue {
+            background: #ffebee;
+            border: 1px solid #ffcdd2;
+        }
+
+        .todo-item.overdue .todo-text {
+            font-weight: bold;
+            color: #c62828;
+        }
+
+        .checkbox {
+            width: 22px;
+            height: 22px;
+            border: 2px solid #6c5ce7;
+            border-radius: 50%;
+            margin-right: 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .todo-item.completed .checkbox {
+            background: #6c5ce7;
+        }
+
+        .todo-item.completed .checkbox::after {
+            content: '✓';
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .todo-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .todo-date {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .todo-item.completed .todo-date {
+            color: #ced6e0;
+        }
+
+        .todo-text {
+            font-size: 16px;
+            color: #2d3436;
+            transition: color 0.3s ease;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+
+        .delete-btn {
+            background: transparent;
+            border: none;
+            color: #ff7675;
+            cursor: pointer;
+            font-size: 20px;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            transition: transform 0.2s ease, background 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .delete-btn:hover {
+            background: #ffe3e3;
+            transform: scale(1.1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeOut {
+            to { opacity: 0; transform: scale(0.9); }
+        }
+    </style>
+</head>
+<body>
+    <div class="todo-app">
+        <h1>To-Do List</h1>
+        <div class="input-group">
+            <input type="text" id="search-input" placeholder="할 일 검색..." />
+        </div>
+        <div class="input-group">
+            <input type="text" id="todo-input" placeholder="새로운 할 일을 입력하세요..." />
+            <input type="datetime-local" id="due-date-input" />
+            <button id="add-btn">Add</button>
+        </div>
+        <ul id="todo-list"></ul>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('search-input');
+        const input = document.getElementById('todo-input');
+        const dueDateInput = document.getElementById('due-date-input');
+        const addBtn = document.getElementById('add-btn');
+        const todoList = document.getElementById('todo-list');
+
+        let todos = [];
+        let searchQuery = '';
+
+        function render() {
+            todoList.innerHTML = '';
+            
+            const filteredTodos = todos.filter(todo => 
+                todo.text.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+
+            const now = Date.now();
+            const ONE_HOUR = 60 * 60 * 1000;
+            const TWENTY_FOUR_HOURS = 24 * ONE_HOUR;
+
+            filteredTodos.forEach(todo => {
+                let statusClass = '';
+                if (!todo.completed && todo.dueDate) {
+                    const dueTime = new Date(todo.dueDate).getTime();
+                    const timeLeft = dueTime - now;
+                    
+                    if (timeLeft < 0) {
+                        statusClass = 'overdue';
+                    } else if (timeLeft < TWENTY_FOUR_HOURS) {
+                        statusClass = 'warning';
+                    }
+                }
+
+                const li = document.createElement('li');
+                li.className = `todo-item ${todo.completed ? 'completed' : statusClass}`;
+                
+                const checkbox = document.createElement('div');
+                checkbox.className = 'checkbox';
+                checkbox.onclick = () => toggleTodo(todo.id);
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'todo-content';
+                contentDiv.onclick = () => toggleTodo(todo.id);
+                
+                const span = document.createElement('span');
+                span.className = 'todo-text';
+                span.textContent = todo.text;
+                
+                contentDiv.appendChild(span);
+                
+                if (todo.dueDate) {
+                    const dateSpan = document.createElement('span');
+                    dateSpan.className = 'todo-date';
+                    const displayDate = todo.dueDate.replace('T', ' ');
+                    dateSpan.textContent = `마감일: ${displayDate}`;
+                    contentDiv.appendChild(dateSpan);
+                }
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.innerHTML = '×';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteTodo(todo.id, li);
+                };
+                
+                li.appendChild(checkbox);
+                li.appendChild(contentDiv);
+                li.appendChild(deleteBtn);
+                todoList.appendChild(li);
+            });
+        }
+
+        function getLogCount() {
+            return todos.filter(t => !t.completed).length;
+        }
+
+        function addTodo() {
+            const text = input.value.trim();
+            const dueDate = dueDateInput.value;
+            
+            if (!text || text === '') {
+                alert('할 일을 입력해주세요.');
+                return;
+            }
+
+            todos.push({
+                id: Date.now(),
+                text,
+                dueDate,
+                completed: false
+            });
+            input.value = '';
+            dueDateInput.value = '';
+            
+            console.log(`[추가됨] "${text}" | 남은 할 일: ${getLogCount()}개`);
+            render();
+        }
+
+        function toggleTodo(id) {
+            todos = todos.map(todo => {
+                if (todo.id === id) {
+                    const newState = !todo.completed;
+                    console.log(`[상태변경] "${todo.text}" -> ${newState ? '완료' : '미완료'} | 남은 할 일: ${getLogCount() + (newState ? -1 : 1)}개`);
+                    return { ...todo, completed: newState };
+                }
+                return todo;
+            });
+            render();
+        }
+
+        function deleteTodo(id, element) {
+            const deletedTodo = todos.find(t => t.id === id);
+            
+            // Add fadeOut animation before removing
+            element.style.animation = 'fadeOut 0.2s ease forwards';
+            setTimeout(() => {
+                todos = todos.filter(todo => todo.id !== id);
+                console.log(`[삭제됨] "${deletedTodo ? deletedTodo.text : '알 수 없음'}" | 남은 할 일: ${getLogCount()}개`);
+                render();
+            }, 200);
+        }
+
+        function filterByKeyword(e) {
+            searchQuery = e.target.value;
+            render();
+        }
+
+        searchInput.oninput = filterByKeyword;
+
+        addBtn.onclick = addTodo;
+        input.onkeypress = (e) => {
+            if (e.key === 'Enter') addTodo();
+        };
+
+        // Add some initial placeholder todos for demonstration (optional)
+        todos = [
+            { id: 1, text: '첫 번째 할 일 완료하기 (마감 전 임박 예외 테스트)', dueDate: new Date(Date.now() + 2 * 60000).toISOString().slice(0, 16), completed: false },
+            { id: 2, text: '새로운 할 일 추가해보기 (지연 예외 테스트)', dueDate: new Date(Date.now() - 60000).toISOString().slice(0, 16), completed: false }
+        ];
+        render();
+
+        // 1분마다 주기적으로 마감 상태 렌더링
+        setInterval(render, 60000);
+    </script>
+</body>
+</html>
