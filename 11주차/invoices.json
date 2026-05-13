@@ -1,0 +1,17 @@
+{
+  "INV-001": {
+    "invoice_number": "INV-001",
+    "date": "2026-05-13",
+    "vendor": "ACME Corp",
+    "currency": "KRW",
+    "amount": 120000,
+    "items": [
+      {
+        "name": "Consulting",
+        "quantity": 1,
+        "unit_price": 120000,
+        "total": 120000
+      }
+    ]
+  }
+}

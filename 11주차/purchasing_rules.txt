@@ -1,0 +1,17 @@
+# Purchasing Rules
+
+1. General approval
+- Purchases under 100,000 KRW are approved unless another rule requires review.
+- Purchases from 100,000 KRW to 500,000 KRW require manager approval.
+- Purchases above 500,000 KRW require finance approval.
+
+2. Category rules
+- Software purchases require manager approval.
+- Hardware purchases above 300,000 KRW require finance approval.
+- Professional services require a written contract reference.
+- Travel expenses require a trip purpose.
+
+3. Rejection rules
+- Missing invoice number must be rejected.
+- Missing vendor must require review.
+- Any purchase explicitly marked personal must be rejected.
