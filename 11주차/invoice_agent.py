@@ -38,9 +38,35 @@ INVOICE_SCHEMA: dict[str, Any] = {
         }
     ],
 }
+EXPENSE_CATEGORIES = {
+    "office_supplies",
+    "software",
+    "hardware",
+    "professional_services",
+    "travel",
+    "training",
+    "other",
+}
+COMPLIANCE_STATUSES = {
+    "approved",
+    "needs_approval",
+    "rejected",
+    "needs_review",
+}
+EXPENSE_CLASSIFICATION_SCHEMA: dict[str, Any] = {
+    "category": "professional_services",
+    "confidence": 0.9,
+    "reason": "The invoice contains consulting services.",
+}
+COMPLIANCE_SCHEMA: dict[str, Any] = {
+    "status": "approved",
+    "violations": [],
+    "required_actions": [],
+    "reason": "The invoice satisfies the purchasing rules.",
+}
 
 
-def prompt_llm_for_json(raw_invoice_text: str) -> dict[str, Any]:
+def prompt_openai_for_json(system_message: str, user_message: str) -> dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
@@ -49,17 +75,6 @@ def prompt_llm_for_json(raw_invoice_text: str) -> dict[str, Any]:
         from openai import OpenAI
     except ImportError as exc:
         raise RuntimeError("The openai package is not installed. Run: uv add openai") from exc
-
-    system_message = (
-        "You extract invoice data. Return only one valid JSON object. "
-        "Do not include markdown, explanations, or code fences."
-    )
-    user_message = (
-        "Extract the invoice below into this exact schema. "
-        "Use empty strings, 0, and empty arrays for missing values.\n\n"
-        f"Schema:\n{json.dumps(INVOICE_SCHEMA, ensure_ascii=False, indent=2)}\n\n"
-        f"Invoice text:\n{raw_invoice_text}"
-    )
 
     client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
@@ -84,6 +99,20 @@ def prompt_llm_for_json(raw_invoice_text: str) -> dict[str, Any]:
         raise RuntimeError("OpenAI response JSON must be an object.")
 
     return parsed
+
+
+def prompt_llm_for_json(raw_invoice_text: str) -> dict[str, Any]:
+    system_message = (
+        "You extract invoice data. Return only one valid JSON object. "
+        "Do not include markdown, explanations, or code fences."
+    )
+    user_message = (
+        "Extract the invoice below into this exact schema. "
+        "Use empty strings, 0, and empty arrays for missing values.\n\n"
+        f"Schema:\n{json.dumps(INVOICE_SCHEMA, ensure_ascii=False, indent=2)}\n\n"
+        f"Invoice text:\n{raw_invoice_text}"
+    )
+    return prompt_openai_for_json(system_message, user_message)
 
 
 def _as_text(value: Any) -> str:
@@ -145,6 +174,60 @@ def normalize_invoice_data(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _as_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [_as_text(item) for item in value if _as_text(item)]
+
+
+def normalize_expense_classification(data: dict[str, Any]) -> dict[str, Any]:
+    category = _as_text(data.get("category"))
+    if category not in EXPENSE_CATEGORIES:
+        category = "other"
+
+    confidence_value = data.get("confidence")
+    if isinstance(confidence_value, bool):
+        confidence = 0
+    else:
+        confidence = _as_number(confidence_value)
+    if not isinstance(confidence, int | float):
+        confidence = 0
+    confidence = max(0, min(1, confidence))
+
+    return {
+        "category": category,
+        "confidence": confidence,
+        "reason": _as_text(data.get("reason")),
+    }
+
+
+def normalize_compliance(data: dict[str, Any]) -> dict[str, Any]:
+    status = _as_text(data.get("status"))
+    if status not in COMPLIANCE_STATUSES:
+        status = "needs_review"
+
+    return {
+        "status": status,
+        "violations": _as_string_list(data.get("violations")),
+        "required_actions": _as_string_list(data.get("required_actions")),
+        "reason": _as_text(data.get("reason")),
+    }
+
+
+def normalize_enriched_invoice_data(data: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_invoice_data(data)
+
+    if isinstance(data.get("expense_classification"), dict):
+        normalized["expense_classification"] = normalize_expense_classification(
+            data["expense_classification"]
+        )
+
+    if isinstance(data.get("compliance"), dict):
+        normalized["compliance"] = normalize_compliance(data["compliance"])
+
+    return normalized
+
+
 def extract_invoice_data(raw_text: str) -> dict[str, Any]:
     if not raw_text.strip():
         return {
@@ -166,6 +249,40 @@ def extract_invoice_data(raw_text: str) -> dict[str, Any]:
         "ok": True,
         "error": "",
         "data": normalize_invoice_data(llm_data),
+    }
+
+
+def classify_expense(invoice_data: dict[str, Any]) -> dict[str, Any]:
+    normalized_invoice = normalize_invoice_data(invoice_data)
+    system_message = (
+        "You are a corporate expense classification expert. "
+        "Classify the invoice into exactly one category. "
+        "Return only one valid JSON object. Do not include markdown, "
+        "explanations, or code fences."
+    )
+    user_message = (
+        "Classify this invoice by vendor, amount, item names, and item details. "
+        "Do not evaluate purchasing compliance.\n\n"
+        f"Allowed categories:\n{json.dumps(sorted(EXPENSE_CATEGORIES), indent=2)}\n\n"
+        f"Output schema:\n"
+        f"{json.dumps(EXPENSE_CLASSIFICATION_SCHEMA, ensure_ascii=False, indent=2)}\n\n"
+        f"Invoice data:\n"
+        f"{json.dumps(normalized_invoice, ensure_ascii=False, indent=2)}"
+    )
+
+    try:
+        llm_data = prompt_openai_for_json(system_message, user_message)
+    except RuntimeError as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "data": normalize_expense_classification({}),
+        }
+
+    return {
+        "ok": True,
+        "error": "",
+        "data": normalize_expense_classification(llm_data),
     }
 
 
@@ -200,6 +317,57 @@ def load_purchasing_rules() -> dict[str, Any]:
     }
 
 
+def check_compliance(
+    invoice_data: dict[str, Any], expense_classification: dict[str, Any]
+) -> dict[str, Any]:
+    normalized_invoice = normalize_invoice_data(invoice_data)
+    normalized_classification = normalize_expense_classification(
+        expense_classification
+    )
+    rules_result = load_purchasing_rules()
+    if not rules_result["ok"]:
+        return {
+            "ok": False,
+            "error": rules_result["error"],
+            "data": normalize_compliance({}),
+        }
+
+    system_message = (
+        "You are a company purchasing policy compliance reviewer. "
+        "Judge compliance only from the provided purchasing rules document, "
+        "invoice data, and expense classification. "
+        "Return only one valid JSON object. Do not include markdown, "
+        "explanations, or code fences."
+    )
+    user_message = (
+        "Review the invoice against the purchasing rules. "
+        "If approval is required, use status needs_approval. "
+        "If a rejection rule clearly applies, use status rejected. "
+        "If information is missing or the rules are insufficient to decide, "
+        "use status needs_review. Otherwise use approved.\n\n"
+        f"Output schema:\n{json.dumps(COMPLIANCE_SCHEMA, ensure_ascii=False, indent=2)}\n\n"
+        f"Invoice data:\n{json.dumps(normalized_invoice, ensure_ascii=False, indent=2)}\n\n"
+        "Expense classification:\n"
+        f"{json.dumps(normalized_classification, ensure_ascii=False, indent=2)}\n\n"
+        f"Purchasing rules document:\n{rules_result['data']}"
+    )
+
+    try:
+        llm_data = prompt_openai_for_json(system_message, user_message)
+    except RuntimeError as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "data": normalize_compliance({}),
+        }
+
+    return {
+        "ok": True,
+        "error": "",
+        "data": normalize_compliance(llm_data),
+    }
+
+
 def _load_invoice_store() -> dict[str, Any]:
     if not INVOICE_STORE_PATH.exists():
         return {}
@@ -228,7 +396,7 @@ def _save_invoice_store(store: dict[str, Any]) -> None:
 
 
 def store_invoice(invoice_data: dict[str, Any]) -> dict[str, Any]:
-    normalized_invoice = normalize_invoice_data(invoice_data)
+    normalized_invoice = normalize_enriched_invoice_data(invoice_data)
     invoice_number = normalized_invoice["invoice_number"]
 
     if not invoice_number:
@@ -268,31 +436,83 @@ def run_invoice_agent(raw_invoice_text: str) -> dict[str, Any]:
             "stage": "extract_invoice_data",
             "error": extract_result["error"],
             "invoice": extract_result["data"],
+            "expense_classification": None,
+            "compliance": None,
             "store": None,
             "summary": f"Invoice extraction failed: {extract_result['error']}",
         }
 
     invoice_data = extract_result["data"]
-    store_result = AVAILABLE_TOOLS["store_invoice"](invoice_data)
+    classification_result = AVAILABLE_TOOLS["classify_expense"](invoice_data)
+    if not classification_result["ok"]:
+        return {
+            "ok": False,
+            "stage": "classify_expense",
+            "error": classification_result["error"],
+            "invoice": invoice_data,
+            "expense_classification": classification_result["data"],
+            "compliance": None,
+            "store": None,
+            "summary": (
+                "Expense classification failed: "
+                f"{classification_result['error']}"
+            ),
+        }
+
+    expense_classification = classification_result["data"]
+    compliance_result = AVAILABLE_TOOLS["check_compliance"](
+        invoice_data, expense_classification
+    )
+    if not compliance_result["ok"]:
+        return {
+            "ok": False,
+            "stage": "check_compliance",
+            "error": compliance_result["error"],
+            "invoice": invoice_data,
+            "expense_classification": expense_classification,
+            "compliance": compliance_result["data"],
+            "store": None,
+            "summary": (
+                "Purchasing compliance check failed: "
+                f"{compliance_result['error']}"
+            ),
+        }
+
+    compliance = compliance_result["data"]
+    enriched_invoice_data = {
+        **invoice_data,
+        "expense_classification": expense_classification,
+        "compliance": compliance,
+    }
+
+    store_result = AVAILABLE_TOOLS["store_invoice"](enriched_invoice_data)
     if not store_result["ok"]:
         return {
             "ok": False,
             "stage": "store_invoice",
             "error": store_result["error"],
-            "invoice": invoice_data,
+            "invoice": enriched_invoice_data,
+            "expense_classification": expense_classification,
+            "compliance": compliance,
             "store": store_result,
             "summary": f"Invoice storage failed: {store_result['error']}",
         }
 
     action = "updated" if store_result["updated"] else "stored"
     invoice_number = store_result["invoice_number"]
+    compliance_status = compliance["status"]
     return {
         "ok": True,
         "stage": "complete",
         "error": "",
-        "invoice": invoice_data,
+        "invoice": enriched_invoice_data,
+        "expense_classification": expense_classification,
+        "compliance": compliance,
         "store": store_result,
-        "summary": f"Invoice {invoice_number} was {action}.",
+        "summary": (
+            f"Invoice {invoice_number} was {action}. "
+            f"Compliance status: {compliance_status}."
+        ),
     }
 
 
@@ -331,8 +551,8 @@ TOOLS = [
         },
     },
     {
-        "name": "store_invoice",
-        "description": "Store normalized invoice data by invoice_number.",
+        "name": "classify_expense",
+        "description": "Classify normalized invoice data into one expense category.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -351,11 +571,71 @@ TOOLS = [
             },
             "required": ["invoice_data"],
         },
+    },
+    {
+        "name": "check_compliance",
+        "description": (
+            "Review invoice compliance against purchasing_rules.txt and "
+            "the expense classification."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "invoice_data": {
+                    "type": "object",
+                    "properties": {
+                        "invoice_number": {"type": "string"},
+                        "date": {"type": "string"},
+                        "vendor": {"type": "string"},
+                        "currency": {"type": "string"},
+                        "amount": {"type": "number"},
+                        "items": {"type": "array"},
+                    },
+                    "required": ["invoice_number"],
+                },
+                "expense_classification": {
+                    "type": "object",
+                    "properties": {
+                        "category": {"type": "string"},
+                        "confidence": {"type": "number"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["category"],
+                },
+            },
+            "required": ["invoice_data", "expense_classification"],
+        },
+    },
+    {
+        "name": "store_invoice",
+        "description": "Store normalized invoice data by invoice_number.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "invoice_data": {
+                    "type": "object",
+                    "properties": {
+                        "invoice_number": {"type": "string"},
+                        "date": {"type": "string"},
+                        "vendor": {"type": "string"},
+                        "currency": {"type": "string"},
+                        "amount": {"type": "number"},
+                        "items": {"type": "array"},
+                        "expense_classification": {"type": "object"},
+                        "compliance": {"type": "object"},
+                    },
+                    "required": ["invoice_number"],
+                }
+            },
+            "required": ["invoice_data"],
+        },
     }
 ]
 
 AVAILABLE_TOOLS = {
     "extract_invoice_data": extract_invoice_data,
+    "classify_expense": classify_expense,
+    "check_compliance": check_compliance,
     "store_invoice": store_invoice,
 }
 

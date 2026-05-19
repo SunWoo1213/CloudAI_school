@@ -186,7 +186,68 @@ raw invoice text
 12. `purchasing_rules.txt` 변경 전후 결과 비교
 13. 검증 결과를 Feature List와 Progress 문서에 추가 기록
 
-## 8. 주의 사항
+## 9. 2026-05-19 확장 구현 결과
+
+- OpenAI JSON 호출 헬퍼를 `prompt_openai_for_json(system_message, user_message)`로 범용화했다.
+- 기존 `prompt_llm_for_json(raw_invoice_text)`는 인보이스 추출 전용 래퍼로 유지했다.
+- `EXPENSE_CLASSIFICATION_SCHEMA`와 `COMPLIANCE_SCHEMA`를 추가했다.
+- `classify_expense(invoice_data)` 도구를 구현했다.
+- `check_compliance(invoice_data, expense_classification)` 도구를 구현했다.
+- `check_compliance`는 실행 시점마다 `purchasing_rules.txt`를 읽어 판단 프롬프트에 전달한다.
+- `store_invoice`가 `expense_classification`, `compliance` 확장 필드를 보존해 저장하도록 변경했다.
+- `TOOLS`와 `AVAILABLE_TOOLS`에 네 도구를 모두 등록했다.
+- `run_invoice_agent` 흐름을 다음 순서로 확장했다.
+
+```text
+extract_invoice_data
+  -> classify_expense
+  -> check_compliance
+  -> store_invoice
+```
+
+- 중간 단계 실패 시 이후 단계가 실행되지 않도록 실패 분기를 추가했다.
+- 최종 요약에 compliance status가 표시되도록 변경했다.
+
+### 검증 결과
+
+- 문법 검증
+  - 명령어: `uv run python -m py_compile '11주차/invoice_agent.py'`
+  - 결과: 성공
+  - 참고: sandbox 환경의 `uv` 캐시 접근 권한 문제로 최초 실행은 실패했고, 권한 승인 후 성공했다.
+- fake LLM 기반 4단계 흐름 검증
+  - 인보이스 추출, 지출 분류, 구매 규정 검토, 저장 흐름이 `ok: True`로 완료되는 것을 확인했다.
+  - 저장 JSON에 `expense_classification.category = professional_services`가 포함되는 것을 확인했다.
+  - 저장 JSON에 `compliance.status = needs_approval`이 포함되는 것을 확인했다.
+  - `TOOLS` 순서가 `extract_invoice_data`, `classify_expense`, `check_compliance`, `store_invoice`인지 확인했다.
+  - `AVAILABLE_TOOLS`가 네 도구 전체와 일치하는지 확인했다.
+
+### 실제 OpenAI API 검증 결과
+
+- 검증 방식: `.env`의 `OPENAI_API_KEY`를 `load_env_files()`로 로드한 뒤 `run_invoice_agent(EXAMPLE_INVOICE_TEXT)` 직접 실행
+- 결과: 성공
+- 실행 결과: `ok: True`, `stage: complete`
+- 요약: `Invoice INV-001 was updated. Compliance status: needs_review.`
+- 인보이스 번호: `INV-001`
+- 지출 분류: `professional_services`
+- 구매 규정 상태: `needs_review`
+- 저장 확인: `invoices.json`에 `expense_classification`, `compliance` 필드가 포함됨
+
+### 규칙 파일 변경 전후 검증 결과
+
+- 검증 방식: Python 코드는 수정하지 않고 `purchasing_rules.txt` 내용만 임시 변경한 뒤 같은 `EXAMPLE_INVOICE_TEXT`로 실제 OpenAI API 실행
+- 원래 규칙 실행 결과: `needs_approval`
+  - 근거: `120,000 KRW` 금액 구간에 manager approval 필요
+- 완화 규칙 실행 결과: `approved`
+  - 변경 내용: `200,000 KRW` 미만 승인, `200,000 KRW` 미만 professional services 계약 참조 불필요
+- 원래 규칙으로 복구 후 실행 결과: `needs_review`
+  - 근거: professional services에 written contract reference 필요
+- 판단: 규칙 파일 내용 변경만으로 동일 인보이스의 준수 판단이 바뀌는 것을 확인했다.
+
+### 남은 검증
+
+- 없음
+
+## 10. 주의 사항
 
 - 각 도구는 단일 책임만 가진다.
 - `extract_invoice_data`는 파싱과 스키마 정규화만 담당한다.

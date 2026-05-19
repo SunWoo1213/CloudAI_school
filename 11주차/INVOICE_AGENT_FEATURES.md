@@ -187,3 +187,35 @@
 - 구매 규정 검토 실패 흐름 검증
 - 실제 OpenAI API 기반 end-to-end 검증
 - `purchasing_rules.txt` 변경 전후 결과 비교 검증
+
+## 14. 2026-05-19 확장 구현 검증 기록
+
+### 구현 완료
+
+- `prompt_openai_for_json(system_message, user_message)` 공통 JSON 호출 헬퍼를 추가했다.
+- `prompt_llm_for_json(raw_invoice_text)`는 기존 인보이스 추출 전용 래퍼로 유지했다.
+- `classify_expense`를 구현하고 `EXPENSE_CLASSIFICATION_SCHEMA`를 추가했다.
+- `check_compliance`를 구현하고 `COMPLIANCE_SCHEMA`를 추가했다.
+- `check_compliance`는 `purchasing_rules.txt`를 실행 시점에 읽어 LLM 판단 근거로 전달한다.
+- `store_invoice`는 확장된 인보이스 데이터의 `expense_classification`, `compliance` 필드를 저장한다.
+- `TOOLS`와 `AVAILABLE_TOOLS`에 `extract_invoice_data`, `classify_expense`, `check_compliance`, `store_invoice` 네 도구를 모두 등록했다.
+- `run_invoice_agent`를 `extract_invoice_data -> classify_expense -> check_compliance -> store_invoice` 순서로 확장했다.
+- 실패 단계별로 이후 도구 실행을 중단하고 `stage`, `error`, `summary`를 반환하도록 정리했다.
+
+### 검증 완료
+
+- 검증 명령어: `uv run python -m py_compile '11주차/invoice_agent.py'`
+- 결과: 성공
+- fake LLM 응답으로 4단계 실행 흐름이 완료되는지 확인했다.
+- fake LLM 응답으로 분류 결과가 `professional_services`로 저장되는지 확인했다.
+- fake LLM 응답으로 준수 결과가 `needs_approval`로 저장되는지 확인했다.
+- 도구 등록 목록과 실행 함수 매핑이 네 도구를 모두 포함하는지 확인했다.
+- 실제 OpenAI API 기반 end-to-end 실행 결과 `ok: True`, `stage: complete`를 확인했다.
+- 실제 OpenAI API 실행 결과 `INV-001`이 업데이트되었고, 지출 분류는 `professional_services`, 구매 규정 상태는 `needs_review`로 반환되었다.
+- 실제 저장소 `invoices.json`에 `expense_classification`, `compliance` 필드가 포함되는 것을 확인했다.
+- Python 코드는 수정하지 않고 `purchasing_rules.txt`만 완화한 뒤 같은 인보이스를 실행했을 때 구매 규정 상태가 `approved`로 바뀌는 것을 확인했다.
+- 원래 `purchasing_rules.txt`로 복구한 뒤 같은 인보이스를 다시 실행했을 때 구매 규정 상태가 `needs_review`로 돌아오는 것을 확인했다.
+
+### 미완료 검증
+
+- 없음

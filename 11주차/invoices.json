@@ -12,6 +12,21 @@
         "unit_price": 120000,
         "total": 120000
       }
-    ]
+    ],
+    "expense_classification": {
+      "category": "professional_services",
+      "confidence": 0.95,
+      "reason": "The invoice is for consulting services provided by the vendor ACME Corp."
+    },
+    "compliance": {
+      "status": "needs_review",
+      "violations": [
+        "Professional services require a written contract reference."
+      ],
+      "required_actions": [
+        "Provide a written contract reference for the professional services."
+      ],
+      "reason": "The invoice amount of 120,000 KRW requires manager approval, and the purchase is classified as professional services which require a written contract reference, but this reference is missing."
+    }
   }
 }
